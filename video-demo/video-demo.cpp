@@ -3,13 +3,14 @@
 #include <chrono>
 #include <fstream>
 
-#include <opencv2/highgui/highgui.hpp>
+#include <highgui.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/timer/timer.hpp>
 #include <boost/program_options.hpp>
 
 #include "VideoDetector.h"
+#include "PhotoDetector.h"
 #include "AffdexException.h"
 
 #include "AFaceListener.hpp"
@@ -20,13 +21,17 @@
 using namespace std;
 using namespace affdex;
 
-/// <summary>
-/// Project demos how to use the Affdex Windows SDK VideoDetector
-/// </summary>
 int main(int argsc, char ** argsv)
 {
-
-    //Defaults, overridden by the command line parameters
+    
+    
+    
+    std::map<boost::filesystem::path, bool> VIDEO_EXTS  = { {boost::filesystem::path(".avi"), 1},
+                                                            {boost::filesystem::path(".mov"), 1},
+                                                            {boost::filesystem::path(".flv"), 1},
+                                                            {boost::filesystem::path(".webm"), 1},
+                                                            {boost::filesystem::path(".wmv"), 1},
+                                                            {boost::filesystem::path(".mp4"), 1} };
     affdex::path DATA_FOLDER;
     affdex::path LICENSE_PATH;
     affdex::path videoPath;
@@ -34,7 +39,7 @@ int main(int argsc, char ** argsv)
     bool draw_display = true;
     bool loop = false;
     unsigned int nFaces = 1;
-    int faceDetectorMode = (int)FaceDetectorMode::SMALL_FACES;
+    int faceDetectorMode = (int)FaceDetectorMode::LARGE_FACES;
     
     const int precision = 2;
     std::cerr.precision(precision);
@@ -87,11 +92,11 @@ int main(int argsc, char ** argsv)
     }
     try
     {
-        //Initialize the video file detector
-        VideoDetector videoDetector(process_framerate, nFaces, (affdex::FaceDetectorMode) faceDetectorMode);
+        std::shared_ptr<Detector> detector;
         
         //Initialize out file
         boost::filesystem::path csvPath(videoPath);
+        boost::filesystem::path fileExt = csvPath.extension();
         csvPath.replace_extension(".csv");
         std::ofstream csvFileStream(csvPath.c_str());
         
@@ -101,11 +106,23 @@ int main(int argsc, char ** argsv)
             return 1;
         }
         
+        if (VIDEO_EXTS[fileExt]) // IF it is a video file.
+        {
+            detector = std::make_shared<VideoDetector>(process_framerate, nFaces, (affdex::FaceDetectorMode) faceDetectorMode);
+        }
+        else //Otherwise it's a photo
+        {
+            detector = std::make_shared<PhotoDetector>(nFaces, (affdex::FaceDetectorMode) faceDetectorMode);
+        }
         
         
-        std::cout << "Max num of faces set to: " << videoDetector.getMaxNumberFaces() << std::endl;
+        //VideoDetector videoDetector(process_framerate, nFaces, (affdex::FaceDetectorMode) faceDetectorMode);
+        
+        
+        
+        std::cout << "Max num of faces set to: " << detector->getMaxNumberFaces() << std::endl;
         std::string mode;
-        switch (videoDetector.getFaceDetectorMode())
+        switch (detector->getFaceDetectorMode())
         {
             case FaceDetectorMode::LARGE_FACES:
                 mode = "LARGE_FACES";
@@ -120,28 +137,38 @@ int main(int argsc, char ** argsv)
         std::cout << "Face detector mode set to: " << mode << std::endl;
         shared_ptr<PlottingImageListener> listenPtr(new PlottingImageListener(csvFileStream, draw_display));
         
-        //Activate all the detectors
-        videoDetector.setDetectAllEmotions(true);
-        videoDetector.setDetectAllExpressions(true);
-        videoDetector.setDetectGender(true);
-        videoDetector.setDetectGlasses(true);
-        //Set the location of the data folder and license file
-        videoDetector.setClassifierPath(DATA_FOLDER);
-        videoDetector.setLicensePath(LICENSE_PATH);
-        //Add callback functions implementations
-        videoDetector.setImageListener(listenPtr.get());
+        detector->setDetectAllEmotions(true);
+        detector->setDetectAllExpressions(true);
+		detector->setDetectAllEmojis(true);
+        detector->setDetectGender(true);
+        detector->setDetectGlasses(true);
+        detector->setClassifierPath(DATA_FOLDER);
+        detector->setLicensePath(LICENSE_PATH);
+        detector->setImageListener(listenPtr.get());
         
         
-        videoDetector.start();    //Initialize the detectors .. call only once
+        detector->start();    //Initialize the detectors .. call only once
         
         do
         {
             shared_ptr<StatusListener> videoListenPtr = std::make_shared<StatusListener>();
-            videoDetector.setProcessStatusListener(videoListenPtr.get());
-            videoDetector.process(videoPath); //Process a video
+            detector->setProcessStatusListener(videoListenPtr.get());
+            if (VIDEO_EXTS[fileExt])
+            {
+                ((VideoDetector *)detector.get())->process(videoPath); //Process a video
+            }
+            else
+            {
+				//videoPath is of type std::wstring on windows, but std::string on other platforms.
+				cv::Mat img = cv::imread(std::string(videoPath.begin(), videoPath.end()));
+                
+                // Create a frame
+                Frame frame(img.size().width, img.size().height, img.data, Frame::COLOR_FORMAT::BGR);
+                
+                ((PhotoDetector *)detector.get())->process(frame); //Process an image
+            }
             
-            //For each frame processed
-            while (videoListenPtr->isRunning())
+            do
             {
                 if (listenPtr->getDataSize() > 0)
                 {
@@ -150,7 +177,6 @@ int main(int argsc, char ** argsv)
                     std::map<FaceId, Face> faces = dataPoint.second;
                     
                     
-                    //Draw on the GUI
                     if (draw_display)
                     {
                         listenPtr->draw(faces, frame);
@@ -161,13 +187,12 @@ int main(int argsc, char ** argsv)
                     << " pfps: " << listenPtr->getProcessingFrameRate()
                     << " faces: "<< faces.size() << endl;
                     
-                    //Output metrics to file
                     listenPtr->outputToFile(faces, frame.getTimestamp());
                 }
-            }
+            } while(VIDEO_EXTS[fileExt] && videoListenPtr->isRunning());
         } while(loop);
         
-        videoDetector.stop();
+        detector->stop();
         csvFileStream.close();
         
         std::cout << "Output written to file: " << csvPath << std::endl;
