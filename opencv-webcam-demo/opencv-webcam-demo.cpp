@@ -115,7 +115,7 @@ int main(int argsc, char ** argsv)
             return 1;
         }
 
-        std::ofstream csvFileStream;
+        std::ofstream csvFileStream("output.csv");
 
         std::cerr << "Initializing Affdex FrameDetector" << endl;
         shared_ptr<FaceListener> faceListenPtr(new AFaceListener());
@@ -202,7 +202,7 @@ int main(int argsc, char ** argsv)
                     << " faces: " << faces.size() << endl;
 
                 //Output metrics to the file
-                //listenPtr->outputToFile(faces, frame.getTimestamp());
+                listenPtr->outputToFile(faces, frame.getTimestamp());
             }
 
 

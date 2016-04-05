@@ -126,6 +126,7 @@ endif (DEFINED AFFDEX_DIR)
 
 add_subdirectory(opencv-webcam-demo)
 add_subdirectory(video-demo)
+add_subdirectory(camera-demo)
 
 # --------------------
 # SUMMARY
