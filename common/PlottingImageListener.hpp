@@ -196,7 +196,7 @@ public:
     {
         if (faces.empty())
         {
-            fStream << timeStamp << "nan,nan,no,unknown,unknown,unknown,unknown,";
+            fStream << timeStamp << ",nan,nan,no,unknown,unknown,unknown,unknown,";
             for (std::string angle : headAngles) fStream << "nan,";
             for (std::string emotion : emotions) fStream << "nan,";
             for (std::string expression : expressions) fStream << "nan,";
